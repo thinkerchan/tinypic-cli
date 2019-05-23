@@ -17,7 +17,7 @@
 ```
 
 ## version
-  v0.0.2
+  - 0.0.2 base
 
 ## todo
   - shrink images recursively
