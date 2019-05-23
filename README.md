@@ -1,7 +1,7 @@
 # tinypic-cli
 ## install
   ```bash
-    npm i -g tinypng-cli
+    npm i -g tinypic-cli
   ```
 ## how to use
 ```text
