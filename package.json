@@ -1,10 +1,6 @@
 {
   "name": "tinypic-cli",
-<<<<<<< HEAD
-  "version": "0.0.2",
-=======
   "version": "0.0.3",
->>>>>>> update
   "description": "cmd for tinypng with no key",
   "main": "index.js",
   "scripts": {
@@ -21,10 +17,6 @@
   },
   "author": "thinkerchan",
   "homepage": "https://github.com/thinkerchan/tinypic-cli",
-<<<<<<< HEAD
-  "author": "thinkerchan",
-=======
->>>>>>> update
   "repository": {
     "type": "git",
     "url": "git@github.com:thinkerchan/tinypic-cli.git"
@@ -35,10 +27,7 @@
   "license": "ISC",
   "dependencies": {
     "chalk": "^2.4.2",
-<<<<<<< HEAD
-=======
     "fs-extra": "^8.0.1",
->>>>>>> update
     "minimist": "^1.2.0",
     "request": "^2.88.0"
   }
