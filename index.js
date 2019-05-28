@@ -2,13 +2,15 @@
 const fs = require('fs-extra');
 const path = require('path');
 const request = require('request');
+const glob = require('glob');
 const chalk = require('chalk');
 const argv = require('minimist')(process.argv.slice(2));
 const {name,version} = require('./package.json');
 
 const Conf = {
   API:'https://tinypng.com/web/shrink',
-  imgRexp:/\.(gif|jpg|jpeg|png|GIF|JPG|PNG)$/
+  imgRexp:/\.(gif|jpg|jpeg|png|GIF|JPG|PNG)$/,
+  suffix:'/*.+(png|jpg|jpeg|PNG|JPG|JPEG)'
 }
 
 // 请求头
@@ -39,7 +41,7 @@ const headers = {
     return exists(path) && fs.statSync(path).isDirectory();
   }
 
-  function compress(){
+  function compress(r){
 
     let files,
       imgArr = [],
@@ -68,14 +70,32 @@ const headers = {
       files = fs.readdirSync(_path); // exec "tiny"
     }
 
+
     // 1. 遍历
     files.forEach((item,index)=>{
-      if((Conf.imgRexp).test(item)){ // 检查后缀(注意要过滤掉x.jpg|png类似这样的文件夹)
-        item = _deep? (_path+item) : item ; //文件夹路径要修改
-        if (fs.existsSync(item)) { // 检查是否存在
-          imgArr.push(item)
-        }else{
-          console.log(chalk.bold.red(`\u2718 ${item} does not exist!`))
+      if (r) {  // tiny -r
+        if (fs.existsSync(item)) {
+          if (fs.lstatSync(item).isDirectory()) {
+            let pic = glob.sync( item + '/**'  + Conf.suffix);
+            imgArr = imgArr.concat(pic);
+          }else{
+            if((Conf.imgRexp).test(item)){
+              imgArr.push(item)
+            }
+            // incaseof some file being not an image
+            // else{
+              // console.log(chalk.bold.red(`\u2718 ${item} does not exist!`))
+            // }
+          }
+        }
+      }else{
+        if((Conf.imgRexp).test(item)){ // 检查后缀(注意要过滤掉x.jpg|png类似这样的文件夹)
+          item = _deep? (_path+item) : item ; //文件夹路径要修改
+          if (fs.existsSync(item)) { // 检查是否存在
+            imgArr.push(item)
+          }else{
+            console.log(chalk.bold.red(`\u2718 ${item} does not exist!`))
+          }
         }
       }
     })
@@ -154,15 +174,19 @@ const headers = {
         tiny -b   // backup all your images into \`_folder\`
 
       Example
+
         tiny      // current dir
         tiny .    // current dir
+        tiny -r   // shrink images recursively
+
         tiny a.jpg
         tiny a.jpg b.jpg
         tiny img/test.jpg
+
         tiny folder
       `;
       console.log(chalk.green(tips));
   }else{
-    compress();
+    compress(argv.r);
   }
 })();

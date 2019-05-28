@@ -10,19 +10,24 @@
     tiny -b   // backup all your images into \`_folder\`
 
   Example
+
     tiny      // current dir
     tiny .    // current dir
+    tiny -r   // shrink images recursively
+
     tiny a.jpg
     tiny a.jpg b.jpg
     tiny img/test.jpg
+
     tiny folder
 ```
 
 ## version
+  - 0.0.4 shrink images recursively
   - 0.0.3 add backup
   - 0.0.2 base
 
 ## todo
-  - shrink images recursively ×
+  - shrink images recursively √
   - filter files and folders √
 
