@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-const fs = require('fs');
+const fs = require('fs-extra');
+const path = require('path');
 const request = require('request');
 const chalk = require('chalk');
 const argv = require('minimist')(process.argv.slice(2));
@@ -16,7 +17,12 @@ const headers = {
   "user-agent":'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.131 Safari/537.36',
 }
 
+
 ;(()=>{
+  function exists(path){
+     return fs.existsSync(path) || path.existsSync(path);
+}
+
   function getKb(byte) {
     return (byte / 1024).toFixed(1) + 'k'
   }
@@ -29,36 +35,43 @@ const headers = {
     return fs.statSync(file).size;
   }
 
-  if (argv.v) {
-    console.log(name + ' version: ' + chalk.green(version))
-  }else if (argv.h) {
-    let tips = `
-      Usage
-        tiny <file or path>
+  function isDir(path){
+    return exists(path) && fs.statSync(path).isDirectory();
+  }
 
-      Example
-        tiny
-        tiny .
-        tiny a.jpg
-        tiny a.jpg b.jpg
-        tiny img/test.jpg
-      `;
-      console.log(chalk.green(tips));
-  }else{
-    let files, imgArr = [];
+  function compress(){
+
+    let files,
+      imgArr = [],
+      _path = './', //默认路径
+      _deep = false   //进入子目录
+      ;
+
+    //  判断文件夹
     if (argv._.length) {
-      if (argv._.length==1 && argv._[0]=='.') {
-        files = fs.readdirSync('./');
+      if (argv._.length==1) {
+        if (argv._[0]=='.') { // "tiny ."
+          files = fs.readdirSync(_path);
+        }else{
+          if(isDir(argv._[0])){ // "tiny folder"
+            _path = argv._[0]+'/';
+            _deep = true;
+            files = fs.readdirSync(_path);
+          }else{
+            files =  argv._ ; // "tiny one.jpg"
+          }
+        }
       }else{
-        files =  argv._ ;
+        files =  argv._ ; //  "tiny 1.jpg 2.jpg ..."
       }
     }else{
-      files = fs.readdirSync('./');
+      files = fs.readdirSync(_path); // exec "tiny"
     }
 
     // 1. 遍历
     files.forEach((item,index)=>{
       if((Conf.imgRexp).test(item)){ // 检查后缀(注意要过滤掉x.jpg|png类似这样的文件夹)
+        item = _deep? (_path+item) : item ; //文件夹路径要修改
         if (fs.existsSync(item)) { // 检查是否存在
           imgArr.push(item)
         }else{
@@ -114,5 +127,42 @@ const headers = {
         })
       })
     }
+
+  }
+
+  if (argv.b) {
+    console.log(chalk.green('正在备份图片...'));
+
+    let curPath = process.cwd();
+    let fatherFolder = path.resolve(curPath,'../'); //curPath对应当前包所在的目录
+    let _targetFolder = curPath.split(fatherFolder+'/')[1];
+    let targetFolder = fatherFolder+'/_'+_targetFolder;
+
+    fs.copy(curPath, targetFolder, err => {
+      if (err) return console.error(err)
+      console.log(chalk.green('备份完毕! 图片备份在 `'+targetFolder+'` 中!'));
+    })
+    return;
+  }
+
+  if (argv.v) {
+    console.log(name + ' version: ' + chalk.green(version))
+  }else if (argv.h) {
+    let tips = `
+      Usage
+        tiny <file or path>
+        tiny -b   // backup all your images into \`_folder\`
+
+      Example
+        tiny      // current dir
+        tiny .    // current dir
+        tiny a.jpg
+        tiny a.jpg b.jpg
+        tiny img/test.jpg
+        tiny folder
+      `;
+      console.log(chalk.green(tips));
+  }else{
+    compress();
   }
 })();
