@@ -13,7 +13,6 @@ const Conf = {
   suffix:'/*.+(png|jpg|jpeg|PNG|JPG|JPEG)'
 }
 
-// 请求头
 const headers = {
   "referer": "https://tinypng.com/",
   "user-agent":'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.131 Safari/537.36',
@@ -45,14 +44,13 @@ const headers = {
 
     let files,
       imgArr = [],
-      _path = './', //默认路径
-      _deep = false   //进入子目录
+      _path = './', //default path
+      _deep = false   //goto inner folder
       ;
 
-    //  判断文件夹
-    if (argv._.length) {
+    if (argv._.length) { // fetch user input
       if (argv._.length==1) {
-        if (argv._[0]=='.') { // "tiny ."
+        if (argv._[0]=='.' || argv._[0]==_path ) { // "tiny ." || "tiny ./"
           files = fs.readdirSync(_path);
         }else{
           if(isDir(argv._[0])){ // "tiny folder"
@@ -70,8 +68,6 @@ const headers = {
       files = fs.readdirSync(_path); // exec "tiny"
     }
 
-
-    // 1. 遍历
     files.forEach((item,index)=>{
       if (r) {  // tiny -r
         if (fs.existsSync(item)) {
@@ -89,9 +85,9 @@ const headers = {
           }
         }
       }else{
-        if((Conf.imgRexp).test(item)){ // 检查后缀(注意要过滤掉x.jpg|png类似这样的文件夹)
-          item = _deep? (_path+item) : item ; //文件夹路径要修改
-          if (fs.existsSync(item)) { // 检查是否存在
+        if((Conf.imgRexp).test(item)){
+          item = _deep? (_path+item) : item ;
+          if (fs.existsSync(item)) {
             imgArr.push(item)
           }else{
             console.log(chalk.bold.red(`\u2718 ${item} does not exist!`))
@@ -100,8 +96,7 @@ const headers = {
       }
     })
 
-    // 2. 去重(避免用户手动输入文件名时候重复)
-    imgArr = Array.from(new Set(imgArr));
+    imgArr = Array.from(new Set(imgArr)); // deduplication of user input
 
     let len = imgArr.length;
     if (len==0) {
@@ -117,17 +112,17 @@ const headers = {
           method: 'POST',
           url: Conf.API,
           headers: headers,
-          body: fs.createReadStream(file),  //反复压缩的过程中, 有可能没下载完, 文件大小为0, 会导致报错
+          body: fs.createReadStream(file),  //avoid recompressing until it is over or nodejs cant read this file
           encoding: 'utf8'
         },(err,res,body)=>{ //res.body == body
           try {
             body = JSON.parse(body);
           } catch(e) {
+            console.log(chalk.red(e));
             console.log(chalk.red('\u2718 Not a valid JSON response for `' + file + '`'));
             return;
           }
 
-          // 观察接口返回的数据, 只要存在output.url就说明压缩成功
           let op = body.output;
           if (op&&op.url) {
 
@@ -142,7 +137,7 @@ const headers = {
               })
             }
           }else{
-            console.log(chalk.red('\u2718  Something bad happend: '+body.message));
+            console.log(chalk.red(`\u2718  Something bad happend of compressing \`${file} \`: `+body.message));
           }
         })
       })
@@ -151,16 +146,19 @@ const headers = {
   }
 
   if (argv.b) {
-    console.log(chalk.green('正在备份图片...'));
+    console.log(chalk.green('Backing Up all your FILES...'));
 
     let curPath = process.cwd();
-    let fatherFolder = path.resolve(curPath,'../'); //curPath对应当前包所在的目录
+    let fatherFolder = path.resolve(curPath,'../');
     let _targetFolder = curPath.split(fatherFolder+'/')[1];
     let targetFolder = fatherFolder+'/_'+_targetFolder;
 
     fs.copy(curPath, targetFolder, err => {
-      if (err) return console.error(err)
-      console.log(chalk.green('备份完毕! 图片备份在 `'+targetFolder+'` 中!'));
+      if (err) {
+        return console.error(err)
+      }else{
+        console.log(chalk.yellow('Done! The backup is in `'+targetFolder+'` !'));
+      }
     })
     return;
   }
