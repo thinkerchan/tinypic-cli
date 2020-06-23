@@ -7,7 +7,7 @@
 ```text
   Usage
     tiny <file or path>
-    tiny -b   // backup all your images into \`_folder\`
+    tiny -b   // backup all your **FILES** into \`_folder\`
 
   Example
 
