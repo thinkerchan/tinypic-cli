@@ -13,9 +13,11 @@ const Conf = {
   suffix:'/*.+(png|jpg|jpeg|PNG|JPG|JPEG)'
 }
 
+
 const headers = {
   "referer": "https://tinypng.com/",
   "user-agent":'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.131 Safari/537.36',
+  "X-Forwarded-For": new Array(4).fill(0).map(() => parseInt(Math.random() * 255)).join(".")
 }
 
 
@@ -105,41 +107,46 @@ const headers = {
       console.log(chalk.bold.green('\u2714 Found ' + len + ' image' + (len === 1 ? '' : 's')));
       console.log(chalk.bold('Processing...'));
 
-      imgArr.forEach((file)=>{
+      imgArr.forEach((file,index)=>{
+        let delay =  ~~(1000*Math.random())
         let _size = getSize(file);
         let _rawSize = rawSize(file);
-        request({
-          method: 'POST',
-          url: Conf.API,
-          headers: headers,
-          body: fs.createReadStream(file),  //avoid recompressing until it is over or nodejs cant read this file
-          encoding: 'utf8'
-        },(err,res,body)=>{ //res.body == body
-          try {
-            body = JSON.parse(body);
-          } catch(e) {
-            console.log(chalk.red(e));
-            console.log(chalk.red('\u2718 Not a valid JSON response for `' + file + '`'));
-            return;
-          }
-
-          let op = body.output;
-          if (op&&op.url) {
-
-            let diff = _rawSize-op.size;
-            let percent = diff/_rawSize*100;
-
-            if (percent<1) {
-              console.log(chalk.yellow('\u2718 Couldn’t compress `'+file+'` any further'));
-            }else{
-              request(op.url).pipe(fs.createWriteStream(file)).on('close', () => {
-                console.log(chalk.green('\u2714 Saved '+getKb(diff)+' ('+percent.toFixed(2)+'%) for `'+chalk.bold(file)+'`'));
-              })
+        let t = setTimeout(function(){
+          clearTimeout(t)
+          t = null
+          request({
+            method: 'POST',
+            url: Conf.API,
+            headers: headers,
+            body: fs.createReadStream(file),  //avoid recompressing until it is over or nodejs cant read this file
+            encoding: 'utf8'
+          },(err,res,body)=>{ //res.body == body
+            try {
+              body = JSON.parse(body);
+            } catch(e) {
+              console.log(chalk.red(e));
+              console.log(chalk.red('\u2718 Not a valid JSON response for `' + file + '`'));
+              return;
             }
-          }else{
-            console.log(chalk.red(`\u2718  Something bad happend of compressing \`${file} \`: `+body.message));
-          }
-        })
+
+            let op = body.output;
+            if (op&&op.url) {
+
+              let diff = _rawSize-op.size;
+              let percent = diff/_rawSize*100;
+
+              if (percent<1) {
+                console.log(chalk.yellow('\u2718 Couldn’t compress `'+file+'` any further'));
+              }else{
+                request(op.url).pipe(fs.createWriteStream(file)).on('close', () => {
+                  console.log(chalk.green('\u2714 Saved '+getKb(diff)+' ('+percent.toFixed(2)+'%) for `'+chalk.bold(file)+'`'));
+                })
+              }
+            }else{
+              console.log(chalk.red(`\u2718  Something bad happend of compressing \`${file} \`: `+body.message));
+            }
+          })
+        },index*1000+delay)
       })
     }
 
