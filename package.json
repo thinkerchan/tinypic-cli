@@ -1,6 +1,6 @@
 {
   "name": "tinypic-cli",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "cmd for tinypng with no key",
   "main": "index.js",
   "scripts": {
@@ -30,6 +30,6 @@
     "fs-extra": "^8.0.1",
     "glob": "^7.1.4",
     "minimist": "^1.2.0",
-    "request": "^2.88.0"
+    "request": "^2.88.2"
   }
 }

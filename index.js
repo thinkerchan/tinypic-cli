@@ -8,7 +8,7 @@ const argv = require('minimist')(process.argv.slice(2));
 const {name,version} = require('./package.json');
 
 const Conf = {
-  API:'https://tinypng.com/web/shrink',
+  API:'https://tinypng.com/backend/opt/shrink',
   imgRexp:/\.(gif|jpg|jpeg|png|GIF|JPG|PNG)$/,
   suffix:'/*.+(png|jpg|jpeg|PNG|JPG|JPEG)'
 }
