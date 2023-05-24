@@ -5,3 +5,5 @@ package-lock.json
 .Trashes
 node_modules
 npm-debug.log
+
+bk.js
