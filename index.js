@@ -8,14 +8,14 @@ const argv = require('minimist')(process.argv.slice(2));
 const { name, version } = require('./package.json');
 
 const Conf = {
-  API: 'https://tinypng.com/backend/opt/shrink',
+  API: 'https://tinyjpg.com/backend/opt/shrink',
   imgRexp: /\.(gif|jpg|jpeg|png|GIF|JPG|PNG)$/,
   suffix: '/*.+(png|jpg|jpeg|PNG|JPG|JPEG)'
 }
 
 const headers = {
-  "referer": "https://tinypng.com/",
-  "user-agent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.131 Safari/537.36',
+  "referer": "https://tinyjpg.com/",
+  "user-agent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
 }
 
 ;(() => {
@@ -40,12 +40,10 @@ const headers = {
   }
 
   function compress(r) {
-
     let files,
-      imgArr = [],
-      _path = './', //default path
-      _deep = false   //goto inner folder
-      ;
+    imgArr = [],
+    _path = './', //default path
+    _deep = false;   //goto inner folder
 
     if (argv._.length) { // fetch user input
       if (argv._.length == 1) {
@@ -98,6 +96,7 @@ const headers = {
       console.log(chalk.bold.red('\u2718 No images found.'));
     } else {
       console.log(chalk.bold.green('\u2714 Found ' + len + ' image' + (len === 1 ? '' : 's')));
+      console.log(chalk.bold.yellow(`check API (https://tinyjpg.com/backend/opt/shrink) if it does not work`));
       console.log(chalk.bold('Processing...'));
 
       imgArr.forEach((file, index) => {
@@ -107,43 +106,43 @@ const headers = {
         let t = setTimeout(function () {
           clearTimeout(t)
           t = null
-          axios.post(Conf.API, fs.createReadStream(file), {
+          let fileObj = fs.createReadStream(file);
+          axios.post(Conf.API, fileObj, {
             headers: headers,
-            responseType: 'json'
+            responseType: 'json',
+            timeout: 15*1000,
           })
-            .then(response => {
-              let body = response.data;
-              let op = body.output;
-              if (op && op.url) {
-                let diff = _rawSize - op.size;
-                let percent = diff / _rawSize * 100;
-                if (percent < 1) {
-                  console.log(chalk.yellow('\u2718 Couldn’t compress `' + file + '` any further'));
-                } else {
-
-                  // 服务器压缩完图, 再保存到本地
-                  axios.get(op.url, { responseType: 'stream' })
-                    .then(response => {
-                      const writer = fs.createWriteStream(file);
-                      response.data.pipe(writer);
-                      writer.on('close', () => {
-                        console.log(chalk.green('\u2714 Saved ' + getKb(diff) + ' (' + percent.toFixed(2) + '%) for `' + chalk.bold(file) + '`'));
-                      });
-                      writer.on('error', error => {
-                        console.log(chalk.red('Error occurred while saving the compressed file: ' + error));
-                      });
-                    })
-                    .catch(error => {
-                      console.log(chalk.red('Error occurred while downloading the compressed file: ' + error));
-                    });
-                }
+          .then(response => {
+            let body = response.data;
+            let op = body.output;
+            if (op && op.url) {
+              let diff = _rawSize - op.size;
+              let percent = diff / _rawSize * 100;
+              if (percent < 1) {
+                console.log(chalk.yellow('\u2718 Couldn’t compress `' + file + '` any further'));
               } else {
-                console.log(chalk.red(`\u2718  Something bad happend of compressing \`${file} \`: ` + body.message));
+                axios.get(op.url, { responseType: 'stream' })
+                .then(response => {
+                  const writer = fs.createWriteStream(file);
+                  response.data.pipe(writer);
+                  writer.on('close', () => {
+                    console.log(chalk.green('\u2714 Saved ' + getKb(diff) + ' (' + percent.toFixed(2) + '%) for `' + chalk.bold(file) + '`'));
+                  });
+                  writer.on('error', error => {
+                    console.log(chalk.red('Error occurred while saving the compressed file: ' + error.message));
+                  });
+                })
+                .catch(error => {
+                  console.log(chalk.red('Error occurred while downloading the compressed file: ' + error.message));
+                });
               }
-            })
-            .catch(error => {
-              console.log(chalk.red('Error occurred while compressing the file: ' + error));
-            });
+            } else {
+              console.log(chalk.red(`\u2718  Something bad happened while compressing \`${file}\`: ` + (body.message || 'Unknown error')));
+            }
+          })
+          .catch(error => {
+            console.error('Error occurred while compressing the file:', error.response ? error.response.data : error.message);
+          });
         }, index * 1000 + delay)
       })
     }
@@ -172,22 +171,22 @@ const headers = {
     console.log(name + ' version: ' + chalk.green(version))
   } else if (argv.h) {
     let tips = `
-      Usage
-        tiny <file or path>
-        tiny -b   // backup all your images into \`_folder\`
+    Usage
+    tiny <file or path>
+    tiny -b   // backup all your images into \`_folder\`
 
-      Example
+    Example
 
-        tiny      // current dir
-        tiny .    // current dir
-        tiny -r   // shrink images recursively
+    tiny      // current dir
+    tiny .    // current dir
+    tiny -r   // shrink images recursively
 
-        tiny a.jpg
-        tiny a.jpg b.jpg
-        tiny img/test.jpg
+    tiny a.jpg
+    tiny a.jpg b.jpg
+    tiny img/test.jpg
 
-        tiny folder
-      `;
+    tiny folder
+    `;
     console.log(chalk.green(tips));
   } else {
     compress(argv.r);
