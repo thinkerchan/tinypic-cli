@@ -21,13 +21,3 @@
 
     tiny folder
 ```
-
-## version
-  - 0.0.4 shrink images recursively
-  - 0.0.3 add backup
-  - 0.0.2 base
-
-## todo
-  - shrink images recursively √
-  - filter files and folders √
-
