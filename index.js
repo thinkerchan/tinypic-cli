@@ -7,170 +7,277 @@ const chalk = require('chalk');
 const argv = require('minimist')(process.argv.slice(2));
 const { name, version } = require('./package.json');
 
-const Conf = {
+const CONFIG = {
   API: 'https://tinyjpg.com/backend/opt/shrink',
-  imgRexp: /\.(gif|jpg|jpeg|png|GIF|JPG|PNG)$/,
-  suffix: '/*.+(png|jpg|jpeg|PNG|JPG|JPEG)'
-}
-
-const headers = {
-  "referer": "https://tinyjpg.com/",
-  "user-agent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
-}
-
-;(() => {
-  function exists(path) {
-    return fs.existsSync(path);
+  IMG_REGEXP: /\.(gif|jpg|jpeg|png|GIF|JPG|PNG)$/,
+  GLOB_SUFFIX: '/*.+(png|jpg|jpeg|PNG|JPG|JPEG)',
+  BATCH_SIZE: 5,
+  BATCH_DELAY: 5 * 1000,
+  REQUEST_TIMEOUT: 15 * 1000,
+  HEADERS: {
+    "referer": "https://tinyjpg.com/",
+    "user-agent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
   }
+};
 
-  function getKb(byte) {
-    return (byte / 1024).toFixed(1) + 'k'
-  }
+// 工具函数
+const utils = {
+  exists: (path) => fs.existsSync(path),
+  getKb: (bytes) => (bytes / 1024).toFixed(1) + 'k',
+  getFileSize: (file) => fs.statSync(file).size,
+  isDirectory: (path) => utils.exists(path) && fs.statSync(path).isDirectory(),
+  chunkArray: (array, size) => {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  },
+  sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+  // 倒计时功能
+  countdown: async (seconds) => {
+    return new Promise((resolve) => {
+      let remaining = seconds;
+      const timer = setInterval(() => {
+        process.stdout.write(`\r${chalk.gray(`⏳ wait ${remaining} seconds before next batch...`)}`);
+        remaining--;
 
-  function getSize(file) {
-    return getKb(fs.statSync(file).size)
-  }
-
-  function rawSize(file) {
-    return fs.statSync(file).size;
-  }
-
-  function isDir(path) {
-    return exists(path) && fs.statSync(path).isDirectory();
-  }
-
-  function compress(r) {
-    let files,
-    imgArr = [],
-    _path = './', //default path
-    _deep = false;   //goto inner folder
-
-    if (argv._.length) { // fetch user input
-      if (argv._.length == 1) {
-        if (argv._[0] == '.' || argv._[0] == _path) { // "tiny ." || "tiny ./"
-          files = fs.readdirSync(_path);
-        } else {
-          if (isDir(argv._[0])) { // "tiny folder"
-            _path = argv._[0] + '/';
-            _deep = true;
-            files = fs.readdirSync(_path);
-          } else {
-            files = argv._; // "tiny one.jpg"
-          }
+        if (remaining < 0) {
+          clearInterval(timer);
+          process.stdout.write('\r' + ' '.repeat(50) + '\r'); // 清除倒计时行
+          resolve();
         }
-      } else {
-        files = argv._; //  "tiny 1.jpg 2.jpg ..."
-      }
-    } else {
-      files = fs.readdirSync(_path); // exec "tiny"
+      }, 1000);
+    });
+  }
+};
+
+// 文件收集器
+class FileCollector {
+  constructor(recursive = false) {
+    this.recursive = recursive;
+  }
+
+  collect() {
+    const inputFiles = this._getInputFiles();
+    const imageFiles = this._extractImageFiles(inputFiles);
+    return [...new Set(imageFiles)]; // 去重
+  }
+
+  _getInputFiles() {
+    if (!argv._.length) return fs.readdirSync('./');
+
+    if (argv._.length === 1) {
+      const input = argv._[0];
+      if (input === '.' || input === './') return fs.readdirSync('./');
+      if (utils.isDirectory(input)) return { directory: input };
+      return [input];
     }
 
-    files.forEach((item, index) => {
-      if (r) {  // tiny -r
-        if (fs.existsSync(item)) {
-          if (fs.lstatSync(item).isDirectory()) {
-            let pic = glob.sync(item + '/**' + Conf.suffix);
-            imgArr = imgArr.concat(pic);
-          } else {
-            if ((Conf.imgRexp).test(item)) {
-              imgArr.push(item)
-            }
-          }
-        }
-      } else {
-        if ((Conf.imgRexp).test(item)) {
-          item = _deep ? (_path + item) : item;
-          if (fs.existsSync(item)) {
-            imgArr.push(item)
-          } else {
-            console.log(chalk.bold.red(`\u2718 ${item} does not exist!`))
-          }
-        }
-      }
-    })
+    return argv._;
+  }
 
-    imgArr = Array.from(new Set(imgArr)); // deduplication of user input
-
-    let len = imgArr.length;
-    if (len == 0) {
-      console.log(chalk.bold.red('\u2718 No images found.'));
-    } else {
-      console.log(chalk.bold.green('\u2714 Found ' + len + ' image' + (len === 1 ? '' : 's')));
-      console.log(chalk.bold.yellow(`check API (https://tinyjpg.com/backend/opt/shrink) if it does not work`));
-      console.log(chalk.bold('Processing...'));
-
-      imgArr.forEach((file, index) => {
-        let delay = ~~(1000 * Math.random())
-        let _size = getSize(file);
-        let _rawSize = rawSize(file);
-        let t = setTimeout(function () {
-          clearTimeout(t)
-          t = null
-          let fileObj = fs.createReadStream(file);
-          axios.post(Conf.API, fileObj, {
-            headers: headers,
-            responseType: 'json',
-            timeout: 15*1000,
-          })
-          .then(response => {
-            let body = response.data;
-            let op = body.output;
-            if (op && op.url) {
-              let diff = _rawSize - op.size;
-              let percent = diff / _rawSize * 100;
-              if (percent < 1) {
-                console.log(chalk.yellow('\u2718 Couldn’t compress `' + file + '` any further'));
-              } else {
-                axios.get(op.url, { responseType: 'stream' })
-                .then(response => {
-                  const writer = fs.createWriteStream(file);
-                  response.data.pipe(writer);
-                  writer.on('close', () => {
-                    console.log(chalk.green('\u2714 Saved ' + getKb(diff) + ' (' + percent.toFixed(2) + '%) for `' + chalk.bold(file) + '`'));
-                  });
-                  writer.on('error', error => {
-                    console.log(chalk.red('Error occurred while saving the compressed file: ' + error.message));
-                  });
-                })
-                .catch(error => {
-                  console.log(chalk.red('Error occurred while downloading the compressed file: ' + error.message));
-                });
-              }
-            } else {
-              console.log(chalk.red(`\u2718  Something bad happened while compressing \`${file}\`: ` + (body.message || 'Unknown error')));
-            }
-          })
-          .catch(error => {
-            console.error('Error occurred while compressing the file:', error.response ? error.response.data : error.message);
-          });
-        }, index * 1000 + delay)
-      })
+  _extractImageFiles(files) {
+    if (files.directory) {
+      return this._collectFromDirectory(files.directory);
     }
 
-  }
+    const imageFiles = [];
+    const fileArray = Array.isArray(files) ? files : [files];
 
-  if (argv.b) {
-    console.log(chalk.green('Backing Up all your FILES...'));
-
-    let curPath = process.cwd();
-    let fatherFolder = path.resolve(curPath, '../');
-    let _targetFolder = curPath.split(fatherFolder + '/')[1];
-    let targetFolder = fatherFolder + '/_' + _targetFolder;
-
-    fs.copy(curPath, targetFolder, err => {
-      if (err) {
-        return console.error(err)
-      } else {
-        console.log(chalk.yellow('Done! The backup is in `' + targetFolder + '` !'));
+    fileArray.forEach(file => {
+      if (this.recursive && utils.exists(file) && utils.isDirectory(file)) {
+        imageFiles.push(...this._collectRecursively(file));
+      } else if (this._isImageFile(file)) {
+        imageFiles.push(...this._validateAndAdd(file));
       }
-    })
-    return;
+    });
+
+    return imageFiles;
   }
 
-  if (argv.v) {
-    console.log(name + ' version: ' + chalk.green(version))
-  } else if (argv.h) {
-    let tips = `
+  _collectFromDirectory(dir) {
+    const dirPath = dir.endsWith('/') ? dir : dir + '/';
+    return fs.readdirSync(dirPath)
+      .filter(file => this._isImageFile(file))
+      .map(file => dirPath + file)
+      .filter(file => utils.exists(file));
+  }
+
+  _collectRecursively(dir) {
+    return glob.sync(dir + '/**' + CONFIG.GLOB_SUFFIX);
+  }
+
+  _isImageFile(file) {
+    return CONFIG.IMG_REGEXP.test(file);
+  }
+
+  _validateAndAdd(file) {
+    if (utils.exists(file)) {
+      return [file];
+    } else {
+      console.log(chalk.bold.red(`✗ ${file} does not exist!`));
+      return [];
+    }
+  }
+}
+
+// 图片压缩器
+class ImageCompressor {
+  async compressFile(file) {
+    const originalSize = utils.getFileSize(file);
+    const delay = Math.random() * 1000;
+
+    await utils.sleep(delay);
+
+    try {
+      const compressedData = await this._uploadForCompression(file);
+      if (!compressedData.output?.url) {
+        throw new Error(compressedData.message || 'No compressed output received');
+      }
+
+      const { size: compressedSize, url } = compressedData.output;
+      const savings = originalSize - compressedSize;
+      const percentage = (savings / originalSize * 100);
+
+      if (percentage < 1) {
+        console.log(chalk.yellow(`✗ Couldn't compress \`${file}\` any further`));
+        return { success: true, file, skipped: true };
+      }
+
+      await this._downloadAndSave(url, file);
+      console.log(chalk.green(`✓ Saved ${utils.getKb(savings)} (${percentage.toFixed(2)}%) for \`${chalk.bold(file)}\``));
+      return { success: true, file };
+
+    } catch (error) {
+      console.log(chalk.red(`✗ Failed to compress \`${file}\`: ${error.message}`));
+      return { success: false, file, error: error.message };
+    }
+  }
+
+  async _uploadForCompression(file) {
+    const fileStream = fs.createReadStream(file);
+    const response = await axios.post(CONFIG.API, fileStream, {
+      headers: CONFIG.HEADERS,
+      responseType: 'json',
+      timeout: CONFIG.REQUEST_TIMEOUT,
+    });
+    return response.data;
+  }
+
+  async _downloadAndSave(url, file) {
+    const response = await axios.get(url, { responseType: 'stream' });
+    const writer = fs.createWriteStream(file);
+
+    return new Promise((resolve, reject) => {
+      response.data.pipe(writer);
+      writer.on('close', resolve);
+      writer.on('error', reject);
+    });
+  }
+}
+
+// 批量处理器
+class BatchProcessor {
+  constructor() {
+    this.compressor = new ImageCompressor();
+    this.failedFiles = [];
+    this.skippedFiles = [];
+  }
+
+  async process(imageFiles) {
+    if (imageFiles.length === 0) {
+      console.log(chalk.bold.red('✗ No images found.'));
+      return;
+    }
+
+    this._printProcessingInfo(imageFiles.length);
+
+    const batches = utils.chunkArray(imageFiles, CONFIG.BATCH_SIZE);
+
+    for (let i = 0; i < batches.length; i++) {
+      await this._processBatch(batches[i], i + 1, batches.length);
+
+      if (i < batches.length - 1) {
+        const delaySeconds = Math.ceil(CONFIG.BATCH_DELAY / 1000);
+        await utils.countdown(delaySeconds);
+      }
+    }
+
+    this._printFinalSummary(imageFiles.length);
+  }
+
+  _printProcessingInfo(totalImages) {
+    console.log(chalk.bold.green(`✓ Found ${totalImages} image${totalImages === 1 ? '' : 's'}`));
+    console.log(chalk.bold.yellow(`Check API ${CONFIG.API} if it does not work`));
+
+    const totalBatches = Math.ceil(totalImages / CONFIG.BATCH_SIZE);
+    console.log(chalk.bold.blue(`📋 Images will be processed in ${totalBatches} batch${totalBatches === 1 ? '' : 'es'} (max ${CONFIG.BATCH_SIZE} images per batch)`));
+    console.log(chalk.bold('Processing...'));
+  }
+
+    async _processBatch(batch, batchIndex, totalBatches) {
+    console.log(chalk.cyan(`\n📦 Processing batch ${batchIndex}/${totalBatches} (${batch.length} images)...`));
+
+    const results = await Promise.all(batch.map(file => this.compressor.compressFile(file)));
+
+    // 收集失败和跳过的文件
+    results.forEach(result => {
+      if (!result.success) {
+        this.failedFiles.push({ file: result.file, error: result.error });
+      } else if (result.skipped) {
+        this.skippedFiles.push(result.file);
+      }
+    });
+
+    console.log(chalk.green(`✅ Batch ${batchIndex}/${totalBatches} completed!`));
+  }
+
+  _printFinalSummary(totalFiles) {
+    const successCount = totalFiles - this.failedFiles.length;
+    const skippedCount = this.skippedFiles.length;
+    const failedCount = this.failedFiles.length;
+
+    console.log(chalk.bold.green('\n🎉 All batches completed!'));
+    console.log(chalk.bold.blue(`📊 Summary: ${successCount} successful, ${skippedCount} skipped, ${failedCount} failed`));
+
+    if (this.skippedFiles.length > 0) {
+      console.log(chalk.yellow(`\n⚠️  Skipped files (couldn't compress further):`));
+      this.skippedFiles.forEach(file => {
+        console.log(chalk.yellow(`   • ${file}`));
+      });
+    }
+
+    if (this.failedFiles.length > 0) {
+      console.log(chalk.red(`\n❌ Failed files:`));
+      this.failedFiles.forEach(({ file, error }) => {
+        console.log(chalk.red(`   • ${file} - ${error}`));
+      });
+    }
+  }
+}
+
+// 备份功能
+function backupFiles() {
+  console.log(chalk.green('Backing Up all your FILES...'));
+
+  const curPath = process.cwd();
+  const parentDir = path.resolve(curPath, '../');
+  const folderName = path.basename(curPath);
+  const backupPath = path.join(parentDir, '_' + folderName);
+
+  fs.copy(curPath, backupPath, err => {
+    if (err) {
+      console.error(err);
+    } else {
+      console.log(chalk.yellow(`Done! The backup is in \`${backupPath}\` !`));
+    }
+  });
+}
+
+// 显示帮助信息
+function showHelp() {
+  const helpText = `
     Usage
     tiny <file or path>
     tiny -b   // backup all your images into \`_folder\`
@@ -187,8 +294,30 @@ const headers = {
 
     tiny folder
     `;
-    console.log(chalk.green(tips));
-  } else {
-    compress(argv.r);
+  console.log(chalk.green(helpText));
+}
+
+// 主程序
+(async () => {
+  if (argv.b) {
+    backupFiles();
+    return;
   }
+
+  if (argv.v) {
+    console.log(name + ' version: ' + chalk.green(version));
+    return;
+  }
+
+  if (argv.h) {
+    showHelp();
+    return;
+  }
+
+  // 压缩图片
+  const collector = new FileCollector(argv.r);
+  const imageFiles = collector.collect();
+
+  const processor = new BatchProcessor();
+  await processor.process(imageFiles);
 })();
