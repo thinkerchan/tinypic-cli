@@ -14,9 +14,12 @@ const CONFIG = {
   BATCH_SIZE: 5,
   BATCH_DELAY: 5 * 1000,
   REQUEST_TIMEOUT: 15 * 1000,
+  FAILED_FILES_PATH: path.join(process.cwd(), '.tinypic-failed.json'),
   HEADERS: {
     "referer": "https://tinyjpg.com/",
-    "user-agent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+    "user-agent": `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_${Math.floor(Math.random() * 10)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0`,
+    "x-forwarded-for": `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+    "x-real-ip": `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
   }
 };
 
@@ -32,7 +35,7 @@ const utils = {
       chunks.push(array.slice(i, i + size));
     }
     return chunks;
-  },
+    },
   sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
   // 倒计时功能
   countdown: async (seconds) => {
@@ -49,6 +52,41 @@ const utils = {
         }
       }, 1000);
     });
+  },
+  // 保存失败文件列表
+  saveFailedFiles: (failedFiles) => {
+    try {
+      const data = {
+        timestamp: new Date().toISOString(),
+        files: failedFiles
+      };
+      fs.writeFileSync(CONFIG.FAILED_FILES_PATH, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.log(chalk.yellow(`Warning: Could not save failed files list: ${error.message}`));
+    }
+  },
+  // 读取失败文件列表
+  loadFailedFiles: () => {
+    try {
+      if (!utils.exists(CONFIG.FAILED_FILES_PATH)) {
+        return null;
+      }
+      const data = JSON.parse(fs.readFileSync(CONFIG.FAILED_FILES_PATH, 'utf8'));
+      return data.files || [];
+    } catch (error) {
+      console.log(chalk.yellow(`Warning: Could not load failed files list: ${error.message}`));
+      return null;
+    }
+  },
+  // 清除失败文件列表
+  clearFailedFiles: () => {
+    try {
+      if (utils.exists(CONFIG.FAILED_FILES_PATH)) {
+        fs.unlinkSync(CONFIG.FAILED_FILES_PATH);
+      }
+    } catch (error) {
+      console.log(chalk.yellow(`Warning: Could not clear failed files list: ${error.message}`));
+    }
   }
 };
 
@@ -233,7 +271,7 @@ class BatchProcessor {
     console.log(chalk.green(`✅ Batch ${batchIndex}/${totalBatches} completed!`));
   }
 
-  _printFinalSummary(totalFiles) {
+    _printFinalSummary(totalFiles) {
     const successCount = totalFiles - this.failedFiles.length;
     const skippedCount = this.skippedFiles.length;
     const failedCount = this.failedFiles.length;
@@ -253,7 +291,34 @@ class BatchProcessor {
       this.failedFiles.forEach(({ file, error }) => {
         console.log(chalk.red(`   • ${file} - ${error}`));
       });
+
+      // 保存失败文件列表
+      utils.saveFailedFiles(this.failedFiles);
+      console.log(chalk.cyan(`\n💡 Tip: Run ${chalk.bold('tiny failed')} to retry failed files`));
+    } else {
+      // 如果没有失败文件，清除之前保存的失败文件列表
+      utils.clearFailedFiles();
     }
+  }
+
+  // 处理失败文件的静态方法
+  static async processFailedFiles() {
+    const failedFiles = utils.loadFailedFiles();
+
+    if (!failedFiles || failedFiles.length === 0) {
+      console.log(chalk.yellow('📝 No failed files found to retry'));
+      return;
+    }
+
+    console.log(chalk.blue(`📋 Found ${failedFiles.length} failed file${failedFiles.length === 1 ? '' : 's'} to retry:`));
+    failedFiles.forEach(({ file }) => {
+      console.log(chalk.gray(`   • ${file}`));
+    });
+
+    // 只处理文件名，重新压缩
+    const fileNames = failedFiles.map(({ file }) => file);
+    const processor = new BatchProcessor();
+    await processor.process(fileNames);
   }
 }
 
@@ -280,7 +345,8 @@ function showHelp() {
   const helpText = `
     Usage
     tiny <file or path>
-    tiny -b   // backup all your images into \`_folder\`
+    tiny -b       // backup all your images into \`_folder\`
+    tiny failed   // retry failed files from last compression
 
     Example
 
@@ -293,12 +359,19 @@ function showHelp() {
     tiny img/test.jpg
 
     tiny folder
+    tiny failed   // retry previously failed files
     `;
   console.log(chalk.green(helpText));
 }
 
 // 主程序
 (async () => {
+  // 检查是否是 failed 命令
+  if (argv._.includes('failed')) {
+    await BatchProcessor.processFailedFiles();
+    return;
+  }
+
   if (argv.b) {
     backupFiles();
     return;
